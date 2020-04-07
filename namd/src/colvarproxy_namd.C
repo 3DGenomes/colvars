@@ -472,9 +472,8 @@ void colvarproxy_namd::calculate()
     modifyAppliedForces().add(Vector(f.x, f.y, f.z));
   }
 
-  {
-    // zero out the applied forces on each group
-    modifyGroupForces().resize(modifyRequestedGroups().size());
+  if (atom_groups_new_colvar_forces.size() > 0) {
+    modifyGroupForces().resize(requestedGroups().size());
     ForceList::iterator gf_i = modifyGroupForces().begin();
     for (int ig = 0; gf_i != modifyGroupForces().end(); gf_i++, ig++) {
       cvm::rvector const &f = atom_groups_new_colvar_forces[ig];
