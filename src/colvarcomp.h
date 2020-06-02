@@ -1685,8 +1685,11 @@ public:
 
 protected:
 
-  /// Identifier of the map object (as used by the simulation engine)
+  /// String identifier of the map object (as used by the simulation engine)
   std::string map_name;
+
+  /// Numeric identifier of the map object (as used by the simulation engine)
+  int map_id;
 
   /// Index of the map objet in the proxy arrays
   int volmap_index;

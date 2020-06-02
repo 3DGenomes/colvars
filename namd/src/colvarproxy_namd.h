@@ -208,9 +208,15 @@ public:
   void clear_atom_group(int index);
   int update_group_properties(int index);
 
-  int init_volmap(int volmap_id);
-  int init_volmap(const char *volmap_name);
-  void clear_volmap(int index);
+  virtual int init_volmap_by_id(int volmap_id);
+
+  virtual int init_volmap_by_name(const char *volmap_name);
+
+  virtual int check_volmap_by_id(int volmap_id);
+
+  virtual int check_volmap_by_name(char const *volmap_name);
+
+  virtual void clear_volmap(int index);
 
   std::ostream * output_stream(std::string const &output_name,
                                std::ios_base::openmode mode);
