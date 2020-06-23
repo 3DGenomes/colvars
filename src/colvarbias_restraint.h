@@ -245,6 +245,37 @@ protected:
   virtual cvm::real d_restraint_potential_dk(size_t i) const;
 };
 
+// dca
+/// \brief Harmonic bound bias restraint
+/// (implementation of \link colvarbias_restraint \endlink)
+class colvarbias_restraint_harmonic_bound
+  : public colvarbias_restraint_centers_moving,
+    public colvarbias_restraint_k_moving
+{
+public:
+  colvarbias_restraint_harmonic_bound(char const *key);
+  virtual int init(std::string const &conf);
+  virtual int update();
+  virtual std::string const get_state_params() const;
+  virtual int set_state_params(std::string const &conf);
+  virtual std::ostream & write_state_data(std::ostream &os);
+  virtual std::istream & read_state_data(std::istream &os);
+  virtual std::ostream & write_traj_label(std::ostream &os);
+  virtual std::ostream & write_traj(std::ostream &os);
+  virtual int change_configuration(std::string const &conf);
+  virtual cvm::real energy_difference(std::string const &conf);
+
+protected:
+
+  /// \brief Type of bound: lower 0 or upper 1 bound
+  int bound_type;
+
+  virtual cvm::real colvar_distance(size_t i) const;
+  virtual cvm::real restraint_potential(size_t i) const;
+  virtual colvarvalue const restraint_force(size_t i) const;
+  virtual cvm::real d_restraint_potential_dk(size_t i) const;
+};
+// dca
 
 /// \brief Wall restraint
 /// (implementation of \link colvarbias_restraint \endlink)

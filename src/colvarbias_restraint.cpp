@@ -189,9 +189,11 @@ colvarbias_restraint_moving::colvarbias_restraint_moving(char const * /* key */)
 int colvarbias_restraint_moving::init(std::string const &conf)
 {
   if (b_chg_centers && b_chg_force_k) {
-    cvm::error("Error: cannot specify both targetCenters and targetForceConstant.\n",
-               INPUT_ERROR);
-    return INPUT_ERROR;
+	// dca
+	return COLVARS_OK;
+    //cvm::error("Error: cannot specify both targetCenters and targetForceConstant.\n",
+    //           INPUT_ERROR);
+    //return INPUT_ERROR;
   }
 
   if (b_chg_centers || b_chg_force_k) {
@@ -833,8 +835,11 @@ std::ostream & colvarbias_restraint_harmonic::write_traj(std::ostream &os)
 
 int colvarbias_restraint_harmonic::change_configuration(std::string const &conf)
 {
-  return colvarbias_restraint_centers::change_configuration(conf) |
-    colvarbias_restraint_k::change_configuration(conf);
+  //return colvarbias_restraint_centers::change_configuration(conf) |
+  //  colvarbias_restraint_k::change_configuration(conf);
+  // dca
+	return colvarbias_restraint_centers::change_configuration(conf) &
+	    colvarbias_restraint_k::change_configuration(conf);
 }
 
 
@@ -856,7 +861,179 @@ cvm::real colvarbias_restraint_harmonic::energy_difference(std::string const &co
   return result;
 }
 
+// dca harmonic bound class
+colvarbias_restraint_harmonic_bound::colvarbias_restraint_harmonic_bound(char const *key)
+  : colvarbias(key),
+    colvarbias_ti(key),
+    colvarbias_restraint(key),
+    colvarbias_restraint_centers(key),
+    colvarbias_restraint_moving(key),
+    colvarbias_restraint_k(key),
+    colvarbias_restraint_centers_moving(key),
+    colvarbias_restraint_k_moving(key)
+{
+}
 
+
+int colvarbias_restraint_harmonic_bound::init(std::string const &conf)
+{
+  colvarbias_restraint::init(conf);
+  colvarbias_restraint_moving::init(conf);
+  colvarbias_restraint_centers_moving::init(conf);
+  colvarbias_restraint_k_moving::init(conf);
+
+  if (!get_keyval(conf, "boundType", bound_type, 0)) {
+      cvm::log("Type of bound not provided, using lower bound.\n");
+  }
+  for (size_t i = 0; i < num_variables(); i++) {
+    if (variables(i)->width != 1.0)
+      cvm::log("The force constant for colvar \""+variables(i)->name+
+               "\" will be rescaled to "+
+               cvm::to_str(force_k / (variables(i)->width * variables(i)->width))+
+               " according to the specified width.\n");
+  }
+
+  return COLVARS_OK;
+}
+
+
+int colvarbias_restraint_harmonic_bound::update()
+{
+  int error_code = COLVARS_OK;
+
+  // update the TI estimator (if defined)
+  error_code |= colvarbias_ti::update();
+
+  // update parameters (centers or force constant)
+  error_code |= colvarbias_restraint_centers_moving::update();
+  error_code |= colvarbias_restraint_k_moving::update();
+
+  // update restraint energy and forces
+  error_code |= colvarbias_restraint::update();
+
+  // update accumulated work using the current forces
+  error_code |= colvarbias_restraint_centers_moving::update_acc_work();
+  error_code |= colvarbias_restraint_k_moving::update_acc_work();
+
+  return error_code;
+}
+
+cvm::real colvarbias_restraint_harmonic_bound::colvar_distance(size_t i) const
+{
+  colvar *cv = variables(i);
+  colvarvalue const &cvv = variables(i)->actual_value();
+
+  // For a periodic colvar, both walls may be applicable at the same time
+  // in which case we pick the closer one
+
+  cvm::real const grad = cv->dist2_lgrad(cvv, colvar_centers[i]);
+  if (bound_type == 0 && grad < 0.0) { return 0.5 * grad; }
+  if (bound_type == 1 && grad > 0.0) { return 0.5 * grad; }
+
+  return 0.0;
+}
+
+cvm::real colvarbias_restraint_harmonic_bound::restraint_potential(size_t i) const
+{
+  cvm::real const dist = colvar_distance(i);
+  cvm::real const scale = ((dist > 0.0 && bound_type == 0) || (dist < 0.0 && bound_type == 1)) ? 0.0 : 1.0;
+  return 0.5 * force_k * scale / (variables(i)->width * variables(i)->width) *
+    dist * dist;
+}
+
+
+colvarvalue const colvarbias_restraint_harmonic_bound::restraint_force(size_t i) const
+{
+  cvm::real const dist = colvar_distance(i);
+  cvm::real const scale = ((dist > 0.0 && bound_type == 0) || (dist < 0.0 && bound_type == 1)) ? 0.0 : 1.0;
+  return - force_k * scale / (variables(i)->width * variables(i)->width) * dist;
+}
+
+
+cvm::real colvarbias_restraint_harmonic_bound::d_restraint_potential_dk(size_t i) const
+{
+  cvm::real const dist = colvar_distance(i);
+  cvm::real const scale = ((dist > 0.0 && bound_type == 0) || (dist < 0.0 && bound_type == 1)) ? 0.0 : 1.0;
+  return 0.5 * scale / (variables(i)->width * variables(i)->width) *
+    dist * dist;
+}
+
+
+std::string const colvarbias_restraint_harmonic_bound::get_state_params() const
+{
+  return colvarbias_restraint::get_state_params() +
+    colvarbias_restraint_moving::get_state_params() +
+    colvarbias_restraint_centers_moving::get_state_params() +
+    colvarbias_restraint_k_moving::get_state_params();
+}
+
+
+int colvarbias_restraint_harmonic_bound::set_state_params(std::string const &conf)
+{
+  int error_code = COLVARS_OK;
+  error_code |= colvarbias_restraint::set_state_params(conf);
+  error_code |= colvarbias_restraint_moving::set_state_params(conf);
+  error_code |= colvarbias_restraint_centers_moving::set_state_params(conf);
+  error_code |= colvarbias_restraint_k_moving::set_state_params(conf);
+  return error_code;
+}
+
+
+std::ostream & colvarbias_restraint_harmonic_bound::write_state_data(std::ostream &os)
+{
+  return colvarbias_ti::write_state_data(os);
+}
+
+
+std::istream & colvarbias_restraint_harmonic_bound::read_state_data(std::istream &is)
+{
+  return colvarbias_ti::read_state_data(is);
+}
+
+
+std::ostream & colvarbias_restraint_harmonic_bound::write_traj_label(std::ostream &os)
+{
+  colvarbias_restraint::write_traj_label(os);
+  colvarbias_restraint_centers_moving::write_traj_label(os);
+  colvarbias_restraint_k_moving::write_traj_label(os);
+  return os;
+}
+
+
+std::ostream & colvarbias_restraint_harmonic_bound::write_traj(std::ostream &os)
+{
+  colvarbias_restraint::write_traj(os);
+  colvarbias_restraint_centers_moving::write_traj(os);
+  colvarbias_restraint_k_moving::write_traj(os);
+  return os;
+}
+
+
+int colvarbias_restraint_harmonic_bound::change_configuration(std::string const &conf)
+{
+  return colvarbias_restraint_centers::change_configuration(conf) &
+      colvarbias_restraint_k::change_configuration(conf);
+}
+
+
+cvm::real colvarbias_restraint_harmonic_bound::energy_difference(std::string const &conf)
+{
+  cvm::real const old_bias_energy = bias_energy;
+  cvm::real const old_force_k = force_k;
+  std::vector<colvarvalue> const old_centers = colvar_centers;
+
+  change_configuration(conf);
+  update();
+
+  cvm::real const result = (bias_energy - old_bias_energy);
+
+  bias_energy = old_bias_energy;
+  force_k = old_force_k;
+  colvar_centers = old_centers;
+
+  return result;
+}
+// dca
 
 colvarbias_restraint_harmonic_walls::colvarbias_restraint_harmonic_walls(char const *key)
   : colvarbias(key),
